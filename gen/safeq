@@ -8,6 +8,7 @@ use perunServicesUtils;
 #Forward Declaration
 sub processUsers;
 sub processCostCenters;
+sub checkAttributeValue;
 
 local $::SERVICE_NAME = "safeq";
 local $::PROTOCOL_VERSION = "3.0.0";
@@ -40,13 +41,28 @@ foreach my $rData (@resourcesData) {
 	}
 }
 
+# safeq_costcenters
+## dn: costcenterno=1000001, ou=costcenters, o=ysoftsafeq
+## objectclass: ysqcostcenter
+## costcenterno: 1000001
+## costcentername: Human Resources
+open FILE,">$file" or die "Cannot open $file: $! \n";
+foreach my $id (sort keys %costcentersById) {
+	$id = checkAttributeValue($id);
+
+	print FILE "dn: costcenterno=", $id, ", ou=costcenters, o=ysoftsafeq", "\n";
+	print FILE "objectclass: ysqcostcenter", "\n";
+	print FILE "costcenterno: ", $id, "\n";
+	print FILE "costcentername: ", checkAttributeValue($costcentersById{$id}), "\n";
+	print FILE "\n";
+}
 
 # safeq_users
 ## dn: username=johndoe, ou=users, o=ysoftsafeq
 ## objectclass: ysquser
 ## username: johndoe
 ## ldapauthdn: cn=johndoe, ou=users, ou=mu, dc=ucn, dc=muni, dc=cz
-## firstname: John 
+## firstname: John
 ## lastname: Doe
 ## costcenter: costcenterno=1000001, ou=costcenters, o=ysoftsafeq
 ## email: johndoe@muni.cz
@@ -54,39 +70,25 @@ foreach my $rData (@resourcesData) {
 ## card: CARD98765432
 ## role: everyone
 ## prepaid: FALSE
-open FILE,">$file" or die "Cannot open $file: $! \n";
-
 foreach my $login (sort keys %usersByLogin) {
 	my $attributes = $usersByLogin{$login};
+	$login = checkAttributeValue($login);
 
 	print FILE "dn: username=", $login,", ou=users, o=ysoftsafeq", "\n";
 	print FILE "objectclass: ysquser", "\n";
 	print FILE "username: ", $login, "\n";
 	print FILE "ldapauthdn: cn=", $login, ", ou=users, ou=mu, dc=ucn, dc=muni, dc=cz", "\n";
-	print FILE "firstname: ", $attributes->{$A_USER_FIRST_NAME}, "\n";
-	print FILE "lastname: ", $attributes->{$A_USER_LAST_NAME}, "\n";
-	print FILE "costcenter: costcenterno=", $attributes->{$A_USER_WORKPLACE_ID}, ", ou=costcenters, o=ysoftsafeq", "\n";
-	print FILE "email: ", $attributes->{$A_USER_MAIL}, "\n";
+	print FILE "firstname: ", checkAttributeValue($attributes->{$A_USER_FIRST_NAME}), "\n";
+	print FILE "lastname: ", checkAttributeValue($attributes->{$A_USER_LAST_NAME}), "\n";
+	print FILE "costcenter: costcenterno=", checkAttributeValue($attributes->{$A_USER_WORKPLACE_ID}), ", ou=costcenters, o=ysoftsafeq", "\n";
+	print FILE "email: ", checkAttributeValue($attributes->{$A_USER_MAIL}), "\n";
 
 	foreach my $chipNumber (@{$attributes->{$A_USER_CHIP_NUM}}) {
-		print FILE "card: ", $chipNumber, "\n";
+		print FILE "card: ", checkAttributeValue($chipNumber), "\n";
 	}
-	
+
 	print FILE "role: everyone", "\n";
 	print FILE "prepaid: FALSE", "\n";
-	print FILE "\n";
-}
-
-# safeq_costcenters
-## dn: costcenterno=1000001, ou=costcenters, o=ysoftsafeq
-## objectclass: ysqcostcenter
-## costcenterno: 1000001
-## costcentername: Human Resources
-foreach my $id (sort keys %costcentersById) {
-	print FILE "dn: costcenterno=", $id, ", ou=costcenters, o=ysoftsafeq", "\n";
-	print FILE "objectclass: ysqcostcenter", "\n";
-	print FILE "costcenterno: ", $id, "\n";
-	print FILE "costcentername: ", $costcentersById{$id}, "\n";
 	print FILE "\n";
 }
 
@@ -98,8 +100,8 @@ perunServicesInit::finalize;
 ##############################################################################
 
 sub processUsers {
-	my $memberAttributes = shift;    
-    
+	my $memberAttributes = shift;
+
 	$usersByLogin{$memberAttributes->{$A_USER_LOGIN}} = $memberAttributes unless defined $usersByLogin{$memberAttributes->{$A_USER_LOGIN}};
 
 	processCostCenters $memberAttributes->{$A_USER_WORKPLACE_ID}, $memberAttributes->{$A_USER_WORKPLACE};
@@ -108,6 +110,23 @@ sub processUsers {
 sub processCostCenters {
 	my $costCenterId = shift;
 	my $costCenterName = shift;
-    
+
 	$costcentersById{$costCenterId} = $costCenterName unless defined $costcentersById{$costCenterId};
+}
+
+# method looks for specific characters/symbols in the scalar $value
+# and escapes each of them using backslash
+sub checkAttributeValue {
+	my $value = shift;
+
+	# escape one of the characters inside the string: ",", "+", """, "\", "<", ">" or ";"
+	$value =~ s/[,+"\\><;]/\\${^MATCH}/pg;
+
+	# escape a whitespace or "#" character occurring at the beginning of the string
+	$value =~ s/^\s|^#/\\${^MATCH}/pg;
+
+	# escape a whitespace character occurring at the end of the string
+	$value =~ s/\s$/\\ /g;
+
+	return $value;
 }

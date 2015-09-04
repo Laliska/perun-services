@@ -8,8 +8,8 @@
 PROTOCOL_VERSION='3.0.0'
 
 	# sort & diff scripts from CPAN
-	LDIFDIFF="/home/slava/perun-services/slave/ldap/ldifdiff.pl"
-	LDIFSORT="/home/slava/perun-services/slave/ldap/ldifsort.pl"
+	LDIFDIFF="/home/lalis/github/perun-services/slave/ldap/ldifdiff.pl"
+	LDIFSORT="/home/lalis/github/perun-services/slave/ldap/ldifsort.pl"
 
 	# work files location
 	INFILE="$1"
@@ -18,6 +18,9 @@ PROTOCOL_VERSION='3.0.0'
 	# sorted work files
 	SINFILE="/tmp/sorted-safeq.ldif"
 	S_OLD_FILE="/tmp/sorted-safeq-old.ldif"
+
+	# script for sorting LDIFDIFF output
+	SAFEQ_SORTER="./safeq_sorter.pl"
 
 	# diff file used to modify ldap
 	#MODFILE="${WORK_DIR}/mod"
@@ -31,7 +34,7 @@ PROTOCOL_VERSION='3.0.0'
 		$LDIFSORT -k dn $INFILE >$SINFILE
 
 		# DIFF LDIFs
-		$LDIFDIFF -k dn $SINFILE $S_OLD_FILE | sed '/^[^ ].*/N; s/\n //g' 
+		$LDIFDIFF -k dn $SINFILE $S_OLD_FILE | sed '/^[^ ].*/N; s/\n //g' | $SAFEQ_SORTER
 
 		# Update LDAP based on changes
 		#ldapmodify -x -H "$LDAP_URL" -D "$LDAP_LOGIN" -w "$LDAP_PASSWORD" -c < MODFILE
@@ -42,10 +45,9 @@ PROTOCOL_VERSION='3.0.0'
 		#$LDIFSORT -k dn $INFILE >$SINFILE
 		$LDIFSORT -k dn $INFILE >$SINFILE
 
-		$LDIFDIFF -k dn $SINFILE /dev/null | sed '/^[^ ].*/N; s/\n //g' 
+		$LDIFDIFF -k dn $SINFILE /dev/null | sed '/^[^ ].*/N; s/\n //g' | $SAFEQ_SORTER
 
 		# All entries are new, use ldapadd
 		#ldapadd -x -H "$LDAP_URL" -D "$LDAP_LOGIN" -w "$LDAP_PASSWORD" -c < $SINFILE
 
 	fi
-
