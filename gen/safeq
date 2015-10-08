@@ -12,36 +12,45 @@ sub checkAttributeValue;
 
 local $::SERVICE_NAME = "safeq";
 local $::PROTOCOL_VERSION = "3.0.0";
-my $SCRIPT_VERSION = "3.0.0";
+my $SCRIPT_VERSION = "3.0.1";
 
 perunServicesInit::init;
 my $DIRECTORY = perunServicesInit::getDirectory;
 my $data = perunServicesInit::getHierarchicalData;
 
 #Constants
-our $A_USER_LOGIN;         *A_USER_LOGIN =        \'urn:perun:user:attribute-def:def:login-namespace:mu';
-our $A_USER_FIRST_NAME;    *A_USER_FIRST_NAME =   \'urn:perun:user:attribute-def:core:firstName';
-our $A_USER_LAST_NAME;     *A_USER_LAST_NAME =    \'urn:perun:user:attribute-def:core:lastName';
-our $A_USER_MAIL;          *A_USER_MAIL =         \'urn:perun:user:attribute-def:def:preferredMail';
-our $A_USER_CHIP_NUM;      *A_USER_CHIP_NUM =     \'urn:perun:user:attribute-def:def:chipNumbers';
-our $A_USER_WORKPLACE;     *A_USER_WORKPLACE =    \'urn:perun:user:attribute-def:def:workplace';
-our $A_USER_WORKPLACE_ID;  *A_USER_WORKPLACE_ID = \'urn:perun:user:attribute-def:def:workplaceId';
+our $A_USER_LOGIN;             *A_USER_LOGIN =            \'urn:perun:user:attribute-def:def:login-namespace:mu';
+our $A_USER_FIRST_NAME;        *A_USER_FIRST_NAME =       \'urn:perun:user:attribute-def:core:firstName';
+our $A_USER_LAST_NAME;         *A_USER_LAST_NAME =        \'urn:perun:user:attribute-def:core:lastName';
+our $A_USER_MAIL;              *A_USER_MAIL =             \'urn:perun:user:attribute-def:def:preferredMail';
+our $A_USER_CHIP_NUM;          *A_USER_CHIP_NUM =         \'urn:perun:user:attribute-def:def:chipNumbers';
+our $A_USER_WORKPLACE;         *A_USER_WORKPLACE =        \'urn:perun:user:attribute-def:def:workplace';
+our $A_USER_WORKPLACE_ID;      *A_USER_WORKPLACE_ID =     \'urn:perun:user:attribute-def:def:workplaceId';
+our $A_RESOURCE_ROLE;          *A_RESOURCE_ROLE =         \'urn:perun:resource:attribute-def:def:safeq-role';
+our $A_RESOURCE_BILLING_CODE;  *A_RESOURCE_BILLING_CODE = \'urn:perun:resource:attribute-def:def:safeq-billingcode';
 
 my $file = $DIRECTORY . "safeq";
 
+my $STRUC_ROLES = \0;
+my $STRUC_BILLINGCODES = \1;
+
 my %costcentersById;
 my %usersByLogin;
-my @resourcesData = $data->getChildElements;
+my %resourceAttrsByUserLogin;
 
-foreach my $rData (@resourcesData) {
-	my @membersData = $rData->getChildElements;
+my @resources = $data->getChildElements;
 
-	for my $memberAttributes (dataToAttributesHashes @membersData) {
-		processUsers $memberAttributes;
+foreach my $resourceData (@resources) {
+	my @membersData = $resourceData->getChildElements;
+
+	foreach my $memberAttributes (dataToAttributesHashes @membersData) {
+		foreach my $rData (dataToAttributesHashes $resourceData){
+			processUsers $rData->{$A_RESOURCE_ROLE}, $rData->{$A_RESOURCE_BILLING_CODE}, $memberAttributes;
+		}
 	}
 }
 
-# safeq_costcenters
+# costcenters
 ## dn: costcenterno=1000001, ou=costcenters, o=ysoftsafeq
 ## objectclass: ysqcostcenter
 ## costcenterno: 1000001
@@ -57,7 +66,33 @@ foreach my $id (sort keys %costcentersById) {
 	print FILE "\n";
 }
 
-# safeq_users
+# roles
+## dn: rolename=student, ou=roles, o=ysoftsafeq
+## objectclass: ysqrole
+## rolename: student
+#
+# billingcodes
+## dn: billincode=bc1, ou=billingcodes, o=ysoftsafeq
+## objectclass: ysqbillingcode
+## billingcode: bc1
+## bcdescription: Billing code 1
+
+# foreach my $rData (dataToAttributesHashes @resourcesData) {
+# 	my $role = checkAttributeValue($rData->{$A_RESOURCE_ROLE});
+# 	print FILE "dn: rolename=", $role, ", ou=roles, o=ysoftsafeq", "\n";
+# 	print FILE "objectclass: ysqrole", "\n";
+# 	print FILE "rolename: ", $role, "\n";
+# 	print FILE "\n";
+
+# 	my $billingcode = checkAttributeValue($rData->{$A_RESOURCE_BILLING_CODE});
+# 	print FILE "dn: billincode=", $billingcode, ", ou=billingcodes, o=ysoftsafeq", "\n";
+# 	print FILE "objectclass: ysqbillingcode", "\n";
+# 	print FILE "billingcode: ", $billingcode, "\n";
+# 	print FILE "bcdescription: ", "\n";  ## TO-DO
+# 	print FILE "\n";
+# }
+
+# users
 ## dn: username=johndoe, ou=users, o=ysoftsafeq
 ## objectclass: ysquser
 ## username: johndoe
@@ -68,7 +103,8 @@ foreach my $id (sort keys %costcentersById) {
 ## email: johndoe@muni.cz
 ## card: CARD87654321
 ## card: CARD98765432
-## role: everyone
+## role: rolename=student, ou=roles, o=ysoftsafeq
+## billingcode: billincode=bc1, ou=billingcodes, o=ysoftsafeq
 ## prepaid: FALSE
 foreach my $login (sort keys %usersByLogin) {
 	my $attributes = $usersByLogin{$login};
@@ -87,7 +123,14 @@ foreach my $login (sort keys %usersByLogin) {
 		print FILE "card: ", checkAttributeValue($chipNumber), "\n";
 	}
 
-	print FILE "role: everyone", "\n";
+	foreach my $role (keys %{$resourceAttrsByUserLogin{$login}->{$STRUC_ROLES}}) {
+		  print FILE "role: rolename=", $role, ", ou=roles, o=ysoftsafeq", "\n";
+	}
+
+	foreach my $billingcode (keys %{$resourceAttrsByUserLogin{$login}->{$STRUC_BILLINGCODES}}) {
+		print FILE "billingcode: billingcode=", $billingcode, ", ou=billingcodes, o=ysoftsafeq", "\n";
+	}
+
 	print FILE "prepaid: FALSE", "\n";
 	print FILE "\n";
 }
@@ -98,11 +141,23 @@ perunServicesInit::finalize;
 ##############################################################################
 #   Only subs definitions down there
 ##############################################################################
-
 sub processUsers {
+	my $role = shift;
+	my $billingcode = shift;
 	my $memberAttributes = shift;
+	my $login = $memberAttributes->{$A_USER_LOGIN};
 
-	$usersByLogin{$memberAttributes->{$A_USER_LOGIN}} = $memberAttributes unless defined $usersByLogin{$memberAttributes->{$A_USER_LOGIN}};
+	$usersByLogin{$login} = $memberAttributes unless defined $usersByLogin{$login};
+
+  # store roles from all resources to which the user is assigned
+	unless (defined $resourceAttrsByUserLogin{$login}->{$STRUC_ROLES}->{$role}) {
+		$resourceAttrsByUserLogin{$login}->{$STRUC_ROLES}->{$role} = {};
+  }
+
+	# store billingcodes from all resources to which the user is assigned
+	unless (defined $resourceAttrsByUserLogin{$login}->{$STRUC_BILLINGCODES}->{$billingcode}) {
+		$resourceAttrsByUserLogin{$login}->{$STRUC_BILLINGCODES}->{$billingcode} = {};
+	}
 
 	processCostCenters $memberAttributes->{$A_USER_WORKPLACE_ID}, $memberAttributes->{$A_USER_WORKPLACE};
 }
